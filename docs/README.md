@@ -3,6 +3,9 @@
 Start with [practical usage](../USAGE.md) for installation and examples, or
 [general NMA/DAC workflows](WORKFLOWS.md) to analyze your own studies.
 
+For the paper, see [arXiv:2501.01065](https://arxiv.org/abs/2501.01065)
+or [read the PDF](https://arxiv.org/pdf/2501.01065).
+
 ## Methods and implementation
 
 | Question | Guide |

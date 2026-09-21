@@ -4,6 +4,9 @@ The reproduction modules configure experiments; the reusable statistical
 implementation is in [heavily_right](../heavily_right/). Run commands below
 from the release repository root.
 
+Paper: [A Heavily Right Strategy for Statistical Inference with Dependent Studies in Arbitrary Dimensions](https://arxiv.org/abs/2501.01065)
+([PDF](https://arxiv.org/pdf/2501.01065)).
+
 ## Install and inspect
 
 ```bash

@@ -4,6 +4,11 @@
 combination and confidence-region methods in this project. It is deliberately
 functional and does not call Python or translate the Python classes directly.
 
+The methods are described in *A Heavily Right Strategy for Statistical Inference
+with Dependent Studies in Arbitrary Dimensions* by Tianle Liu, Xiao-Li Meng, and
+Natesh S. Pillai: [arXiv abstract](https://arxiv.org/abs/2501.01065) |
+[paper PDF](https://arxiv.org/pdf/2501.01065).
+
 The package is distributed under the GNU General Public License, version 3 or
 later. See [COPYING](inst/COPYING) and [third-party notices](inst/NOTICE).
 It is installed from source and has not been published to CRAN.

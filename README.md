@@ -4,6 +4,12 @@ Python and native R implementations of heavily-right p-value combination,
 confidence regions, network meta-analysis (NMA), and divide-and-combine (DAC),
 with reproducible experiments and saved paper results.
 
+## Paper
+
+Tianle Liu, Xiao-Li Meng, and Natesh S. Pillai (2025).
+[A Heavily Right Strategy for Statistical Inference with Dependent Studies in Arbitrary Dimensions](https://arxiv.org/abs/2501.01065).
+arXiv:2501.01065. [Read the PDF](https://arxiv.org/pdf/2501.01065).
+
 ## Install
 
 Commands below start at this repository's root. Python requires 3.11 or newer.

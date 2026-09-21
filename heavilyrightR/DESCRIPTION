@@ -9,6 +9,7 @@ Description: Native R implementations of heavily right-tailed p-value
     numerical diagnostics and calibration choices explicit and does not use
     Python as a computational backend.
 License: GPL (>= 3)
+URL: https://arxiv.org/abs/2501.01065
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Depends: R (>= 4.2.0)
