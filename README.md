@@ -80,9 +80,6 @@ paper experiment. GeoGebra export requires an external installation.
   certified empty sets as noncoverage without removing studies or resampling.
 - Convex support calculations apply only in the documented normal/t and
   multivariate degree-of-freedom regimes. Numerical uncertainty is not emptiness.
-- Main Figures 10 and 14 retain their manuscript reference selections. Saved
-  reruns are comparison outputs. In particular, the NMA rerun has 100 rather than
-  500 replications per correlation. The results map records this distinction.
 - Passing package tests does not establish that every saved result matches a
   manuscript figure or that every full experiment has been rerun.
 
