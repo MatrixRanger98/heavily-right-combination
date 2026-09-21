@@ -1,0 +1,194 @@
+---
+title: "Troubleshooting and reproducible diagnostic reports"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Troubleshooting and reproducible diagnostic reports}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup}
+library(heavilyright)
+```
+
+## Start with the input contract
+
+| Symptom | Check before changing the analysis |
+|:--|:--|
+| Intervals unexpectedly narrow | Supply covariance of estimates, not observations; use `covariance_of_mean(x) = cov(x)/n`. Arm inputs require SEs of means, not SDs. |
+| `vcov must be positive definite` | Check units, duplicated contrasts, too few observations, and constant or collinear coordinates. Do not silently add a ridge and claim the same statistical model. |
+| Projections do not span the parameter space | Remove unidentified parameters from the scientific model or supply identifying studies. NMA requires a connected treatment network. |
+| Repeated trial IDs require covariance | Use `network_arm_studies()` or supply joint covariance blocks with a nonredundant contrast basis. The explicit independent-row option does not repair dependence. |
+| Hotelling df rejected | Check study dimension and the convexity restrictions in `?fit_meta_md`. Do not change df merely to pass validation. |
+| Weights rejected | Supply one strictly positive weight per study block and normalize to sum one. Multi-arm rows in one joint trial receive one block weight. |
+| Wrong sign for an NMA contrast | Estimates and output bounds mean first treatment minus second. Verify labels and the reference. |
+| DAC partition rejected | Blocks must cover every coordinate exactly once. They partition columns, not observations. |
+
+For low-level null-law functions, `weights = 3` means three equal weights;
+`weights = c(0.2, 0.3, 0.5)` supplies a normalized vector. Those functions allow
+zero weights, but combination specifications require strictly positive weights.
+Finite density, probability, and quantile calls are scalar; use `vapply()` for
+several evaluation points. Batched `combine_p()` input instead puts studies in
+the final array dimension.
+
+```{r shapes}
+rule <- new_combination("hcauchy", m = 3)
+p <- rbind(c(0.01, 0.2, 0.4), c(0.2, 0.5, 0.8))
+combine_p(p, rule)
+vapply(c(5, 10), phcmean, numeric(1), weights = 3, lower.tail = FALSE)
+```
+
+## An empty region is not an optimizer failure
+
+| Result or condition | Meaning | Safe response |
+|:--|:--|:--|
+| Scalar fit with `empty = TRUE` | The returned confidence set is empty. Equal stored endpoints are a sentinel, not a singleton interval. | Report emptiness and retain the trace before any sensitivity analysis. |
+| `heavilyright_empty_region_error` | A multivariate region is certified empty and removal is off. | Inspect study compatibility; an opt-in removal analysis changes the analysis. |
+| `heavilyright_empty_resolution_error` | A removal limit or rank constraint prevents resolution. | Report the unresolved empty set and retained study indices. Do not quietly enlarge the policy. |
+| `heavilyright_empty_numerical_error` | Multivariate minimum, tail, or recalibration checks leave the decision unknown. | Keep the error and history; unknown does not authorize deletion. |
+| `support_interval(...)$success = FALSE` | The proposed bounds failed at least one numerical certificate. | Do not report the bounds as certified. Inspect both endpoint diagnostics. |
+| `heavilyright_numerical_error` | A numerical calculation could not be validated. | Inspect the message, cause, and any attached diagnostics. It is not evidence of emptiness. |
+| `heavilyright_integration_error` / `heavilyright_root_error` | A finite-law integration or quantile inversion failed. | Preserve method, weights, significance level, and error. Do not silently switch calibration. |
+
+Not every validation error carries diagnostics. Multivariate empty-set errors
+carry a record in `error$diagnostics`, including earlier removals if a later
+step fails. Other errors may contain a nested `cause`; retain the original
+condition object when investigating.
+
+```{r scalar-empty}
+scalar <- fit_meta_1d(c(-3, 3), se = 0.5)
+scalar$empty
+scalar$empty_set_diagnostics$final_state
+```
+
+The following captures a known multivariate empty region without converting an
+unexpected failure into a successful fit:
+
+```{r capture-empty}
+studies <- list(
+  study(c(-4, 0), diag(2), label = "left"),
+  study(c(4, 0), diag(2), label = "right")
+)
+result <- tryCatch(
+  fit_meta_md(studies),
+  heavilyright_empty_region_error = identity
+)
+stopifnot(inherits(result, "heavilyright_empty_region_error"))
+conditionMessage(result)
+record <- result$diagnostics
+record$final_state
+record$trace[[1]]$feasible_set_score_lower_bound
+record$trace[[1]]$cutoff
+```
+
+If scientifically appropriate, run a **separate, labelled sensitivity analysis**:
+
+```{r sensitivity}
+sensitivity <- fit_meta_md(studies,
+  empty_policy = empty_set_policy(max_removals = 1, warn = FALSE))
+sensitivity$empty_set_diagnostics$final_original_indices
+```
+
+Turning warnings off does not turn removal off. Omit `empty_policy` to disable
+removal. Removal acts on an entire supplied study block. In a coordinate-only
+DAC partition, deleting a block usually removes the only information about
+those coordinates; rank preservation will therefore prevent that deletion.
+Do not interpret the sensitivity interval as retaining proven post-selection
+coverage.
+
+## Save a trace without overwriting evidence
+
+`write_empty_trace()` needs the optional `jsonlite` package and refuses to
+overwrite an existing file. Use a new destination for every analysis. This
+example uses a temporary file and deletes only that file afterward.
+
+```{r save-trace}
+if (requireNamespace("jsonlite", quietly = TRUE)) {
+  path <- tempfile(fileext = ".json")
+  write_empty_trace(record, path)
+  restored <- jsonlite::read_json(path, simplifyVector = TRUE)
+  stopifnot(identical(restored$final_state, record$final_state))
+  unlink(path)
+}
+```
+
+## Failed endpoint checks
+
+For a returned interval, examine `lower_diagnostics` and `upper_diagnostics`,
+including `message`, `scaled_boundary_error`, `kkt_residual`, and the recorded
+optimizer attempts where present. The analytic one-study path uses different
+diagnostic fields from the numerical multi-study path.
+
+```{r inspect-endpoint}
+fit <- fit_meta_md(list(study(c(0.2, -0.1), diag(c(0.04, 0.09)))))
+interval <- support_interval(fit, c(1, -1))
+stopifnot(interval$success)
+interval$upper_diagnostics
+```
+
+Increasing `maxeval` in `support_interval()` or `nma_contrasts()` can help when
+an evaluation budget is exhausted. It cannot establish an unsupported
+convexity regime, fix missing parameter rank, or remove probability-floor
+limitations. It does not change the earlier minimum search in `fit_meta_md()`.
+
+If all component minima passed but their aggregate gap is still unresolved,
+the combined error bounds exceeded the parent allowance. The solver attempts
+tighter local certificates without increasing that allowance or replenishing
+the original component work budget. Inspect `minimum_diagnostics` on the
+underlying numerical condition (`result$cause` for a caught fitting error),
+including `initial_optimality_gap_bound`, `component_refinement_attempts`, and
+the final gap/tolerance. Exhausted or rejected retries remain numerical
+uncertainty and do not authorize study removal.
+
+Rescaling extreme measurement units and expressing a contrast with a smaller
+direction magnitude may improve representability, but transform estimates,
+covariances, projections, and the final contrast consistently.
+
+`contains()` uses the literal fitted cutoff. A boundary point may be a few
+floating-point units outside that cutoff while meeting its numerical boundary
+tolerance. Inspect the endpoint's certificate rather than replacing the
+returned point or treating membership alone as a solver-quality test.
+
+## Calibration and unexpected differences
+
+Record the resolved calibration, not just the requested `"auto"` setting.
+Finite and Landau results need not agree in the last digits or at small study
+counts. After removal, weights are renormalized and the cutoff is recalculated
+using the resolved calibration. Refit scalar models to change confidence level;
+`confint(fit, level = ...)` does not recalibrate an existing fit. Likewise,
+`combination_cutoff(alpha, rule)` does not mutate `rule`.
+
+`diagnostics = TRUE` in finite null-law density/probability functions reports
+an unlogged numerical error estimate, not a confidence interval and not a
+log-scale error. Analytic support boundaries and bounded underflow may return
+zero; underflow has a positive error allowance. Tiny lower-tail CDFs are
+calculated directly, so use `lower.tail = TRUE` instead of subtracting a
+survival probability from one. Numerical failure is never a substitute zero.
+
+An integer reciprocal count has support exactly one. An explicit vector keeps
+its binary floating-point values without renormalization, so its exact support
+can differ slightly from a rounded sum. This matters extremely close to one;
+use the count input when a mathematical equal-weight mean is intended.
+
+For R/Python comparisons, match the covariance divisor, degrees of freedom,
+study block grouping, treatment signs, weights, calibration, and empty-set
+policy first. Compare endpoint residuals and statistical meaning as well as
+numbers; optimizer iteration counts and random draws are not expected to match.
+
+## A useful issue report
+
+Provide a small synthetic example, the complete call, expected and observed
+behavior, and the exact condition message. Include `sessionInfo()`, package
+versions, resolved calibration, support diagnostics, and an empty-set trace
+when available. Do not include identifiable study or participant data.
+
+```{r versions}
+packageVersion("heavilyright")
+packageVersion("nloptr")
+```
+
+For documentation discovery, run `help(package = "heavilyright")` and
+`vignette(package = "heavilyright")`. If vignettes are missing after a source
+installation, install from a source archive built with vignettes, or rebuild
+locally with the suggested `knitr` and `rmarkdown` packages and Pandoc available.
+Runtime computation needs neither Python nor the vignette-building tools.

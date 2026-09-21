@@ -1,0 +1,338 @@
+---
+title: "Statistical model, calibration, and numerical guarantees"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Statistical model, calibration, and numerical guarantees}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup}
+library(heavilyright)
+```
+
+This guide specifies the implemented conventions. It is not a proof that every
+user-supplied study model satisfies them. A successful numerical calculation
+does not validate independence, normality, or a chosen covariance estimator.
+
+## Study model and covariance of the mean
+
+For study $j$, let $y_j$ have dimension $q_j$, let $\theta$ have dimension $d$,
+and let $A_j$ map the common parameter to the study estimand. Supply
+`study(estimate = y, vcov = V, projection = A, df = nu)` with
+
+\[
+  E(y_j) = A_j\theta, \qquad
+  Q_j(\theta) = (A_j\theta-y_j)^T V_j^{-1}(A_j\theta-y_j).
+\]
+
+`V` is the covariance of the **estimate**. For $n$ independent observations,
+the implemented sample-mean covariance is
+
+\[
+  \widehat V = \frac{W}{n(n-1)}, \qquad
+  W=\sum_{i=1}^n(x_i-\bar x)(x_i-\bar x)^T.
+\]
+
+This equals the Bessel-corrected sample covariance divided by $n$, not
+$W/n^2$. Its diagonal agrees with the squared componentwise standard errors.
+
+```{r covariance-contract}
+x <- matrix(c(1, 2, 4, 7, 2, 5, 8, 11), ncol = 2)
+V <- covariance_of_mean(x)
+stopifnot(isTRUE(all.equal(V, cov(x) / nrow(x))))
+stopifnot(isTRUE(all.equal(diag(V), standard_error_of_mean(x)^2)))
+V
+```
+
+With known covariance, `df = NULL` uses
+$p_j(\theta)=P(\chi^2_{q_j}\ge Q_j(\theta))$. For a sample mean with
+multivariate normal observations, use the sample-mean covariance above and
+$\nu_j=n_j-1$. Hotelling calibration uses
+
+\[
+  p_j(\theta) = P\left(F_{q_j,\nu_j+1-q_j} \ge
+    \frac{\nu_j+1-q_j}{q_j\nu_j}Q_j(\theta)\right).
+\]
+
+Supplying `df` does not make an arbitrary estimated covariance a Hotelling
+covariance. In particular, unequal arm sample sizes in a treatment trial do
+not automatically determine a valid common Hotelling degree of freedom.
+For $q=1$, this formula gives the usual two-sided Student-t p-value.
+
+```{r scalar-hotelling}
+radius <- 1.2
+nu <- 19
+stopifnot(isTRUE(all.equal(
+  pf(radius^2, 1, nu, lower.tail = FALSE),
+  2 * pt(radius, nu, lower.tail = FALSE)
+)))
+```
+
+## Combination and confidence-region inversion
+
+For $m>1$, positive fixed weights $w_j$ sum to one. The two convex-region
+methods use
+
+\[
+  G(\theta)=\sum_{j=1}^m w_j\phi(p_j(\theta)), \qquad
+  \phi_{\mathrm{HC}}(p)=\cot(\pi p/2), \quad
+  \phi_{\mathrm{EH}}(p)=1/p.
+\]
+
+Small p-values yield large scores. Under independent uniform null p-values
+$U_j$, `calibration = "finite"` numerically evaluates the law of
+$\sum_j w_j\phi(U_j)$. It uses its upper-tail probability for the combined
+p-value and its $(1-\alpha)$ quantile $c_\alpha$ for rejection. The closed
+confidence region is
+
+\[
+  C_{1-\alpha}=\{\theta:G(\theta)\le c_\alpha\}.
+\]
+
+The boundary convention has no probability effect under a continuous null.
+Finite-number calibration describes the finite **number of combined tests**;
+it is distinct from the finite-sample covariance and Hotelling calibration.
+Independence is required for the stated finite-number law. Dependent p-values
+need a separate validity argument; neither convexity nor a solver certificate
+provides one. Exact nominal coverage further requires correct study p-values.
+
+```{r finite-law}
+rule <- new_combination("hcauchy", weights = c(0.2, 0.3, 0.5),
+                        calibration = "finite")
+rule$cutoff
+phcmean(rule$cutoff, rule$weights, lower.tail = FALSE, diagnostics = TRUE)
+```
+
+For HCauchy/EHMP, `"auto"` resolves to finite calibration through 1,000 studies
+and to Landau above that count. HMP uses the reciprocal score with Landau
+calibration even if `"finite"` was requested. Inspect the returned
+`specification$calibration`; for an analysis protocol, specify the choice
+explicitly. No automatic branch establishes the accuracy of an asymptotic
+approximation for a particular weight vector.
+
+For entropy $H=-\sum_j w_j\log w_j$ and Euler's constant $\gamma$, the Landau
+approximation uses location $(2/\pi)(H+1-\gamma)$ and scale $1$ for HCauchy,
+and location $H+1-\gamma$ and scale $\pi/2$ for EHMP/HMP. The exported Landau
+functions transform their argument to the base approximation as
+
+\[
+  z=(x-\text{location})\frac{\pi}{2\,\text{scale}}
+    +\log\left(\frac{\pi}{2\,\text{scale}}\right).
+\]
+
+Do not assume another package's Landau location/scale convention is identical.
+Quantiles invert this package's CDF rather than interpolating a lookup table.
+
+The p-value API also implements Cauchy, Levy, Fisher, Stouffer, Bonferroni,
+and Simes rules. Those choices do not inherit the HCauchy/EHMP multivariate
+convexity guarantee. Fisher uses equal contributions. Bonferroni and Simes do
+not use the supplied weight magnitudes. With one study, all rules use the
+internal score `-p` and cutoff `-alpha`, preserving the original study test.
+
+## Convex inference and support intervals
+
+All covariance matrices must be positive definite and the stacked projection
+matrices must identify all $d$ parameters. The implemented multi-study convex
+regimes are:
+
+| Study calibration | HCauchy | EHMP |
+|:--|:--|:--|
+| Known covariance | All supported dimensions | All supported dimensions |
+| Hotelling, $q=1$ | $\nu\ge1$ | $\nu\ge1$ |
+| Hotelling, $q=2$ | $\nu\ge2.5$ | $\nu\ge2$ |
+| Hotelling, $q\ge3$ | $\nu\ge q+1$ | $\nu\ge q$ |
+
+For a nonzero direction $a$, `support_interval(fit, a)` returns
+
+\[
+  L_a=\inf_{\theta\in C}a^T\theta, \qquad
+  U_a=\sup_{\theta\in C}a^T\theta.
+\]
+
+These are projections of the entire joint region, not line slices with other
+coordinates fixed. On the event that the true parameter lies in $C$, every
+such projected interval contains its true contrast. Thus simultaneous coverage
+comes from the joint region and its assumptions, not from additional pairwise
+adjustment. `coef(fit)` returns the minimum-score point, not necessarily the
+midpoint of each projected interval or the GLS estimate.
+
+For one study, let $H=A^TV^{-1}A$, let
+$\theta_0=H^{-1}A^TV^{-1}y$, and let $Q_{\min}=Q(\theta_0)$. The ellipsoid
+uses the appropriate chi-square or Hotelling cutoff $r^2$ and gives
+
+\[
+  a^T\theta_0\ \mathbin{\pm}
+  \sqrt{(r^2-Q_{\min})\,a^TH^{-1}a}.
+\]
+
+```{r analytic-support}
+y <- c(0.2, -0.1)
+V <- matrix(c(0.04, 0.01, 0.01, 0.09), 2)
+a <- c(1, -1)
+fit <- fit_meta_md(list(study(y, V)))
+interval <- support_interval(fit, a)
+radius <- sqrt(qchisq(0.95, 2) * drop(crossprod(a, V %*% a)))
+expected <- sum(a * y) + c(-radius, radius)
+stopifnot(interval$success,
+          isTRUE(all.equal(c(interval$lower, interval$upper), expected)))
+interval
+```
+
+Multiple-study calculations whiten residuals by covariance and use translated,
+scaled parameter coordinates. Scalar residuals have genuine cusps; auxiliary
+absolute-residual variables and bounded subgradients preserve them. SLSQP
+provides candidates, followed by Newton refinement and, when needed, COBYLA
+and bounded active-manifold attempts. Disconnected parameter components are
+normalized and minimized separately.
+
+For disconnected components, writing $G=\sum_j a_jG_j$ with normalized local
+scores means each local minimum-gap bound contributes $a_j\Delta_j$ to the
+parent bound. Passing each local tolerance does not imply that their sum
+passes the parent tolerance. The implementation retains natural-score scaling
+and, when necessary, assigns tighter absolute caps in parent score units.
+Only loose components are retried, using their remaining solver budgets.
+Reconstruction/roundoff allowances and the unchanged aggregate tolerance are
+checked after refinement. A failed refinement cannot establish emptiness.
+
+The minimum is checked using a convex tangent lower bound over an enclosing
+sublevel domain and a minimum-value gap. At a smooth upper support point the
+boundary condition holds and $\nabla G=\eta a$ for $\eta>0$; cusp points use
+the corresponding subgradient condition. Endpoint success requires a boundary
+residual at most `2e-8` of the remaining feasible score budget and a normalized
+KKT residual at most `2e-6`, followed by reconstruction checks in original
+units. The one-study analytic route has its own quadratic and score checks.
+
+These are floating-point residual certificates, **not** interval-arithmetic
+enclosures or a universal convergence guarantee. Optimizer termination alone
+is insufficient. Check `success` and retain both endpoint diagnostics.
+Dense Newton refinement is capped at 250 active coordinates; the package does
+not currently provide a sparse large-dimensional solver.
+
+## NMA and DAC interpretation
+
+NMA contrast estimates mean `treat1 - treat2`. The global reference fixes one
+treatment effect to zero; projection rows encode the remaining differences.
+For independent arm means sharing a local baseline with variance $v_0$,
+contrast covariance is
+$\operatorname{diag}(v_1,\ldots,v_q)+v_0\mathbf{1}\mathbf{1}^T$.
+This is constructed by `network_arm_studies()`. Explicit covariance inputs
+must use a nonredundant contrast basis. Trials, not correlated rows within a
+trial, are the natural independent blocks. No random-effects heterogeneity or
+treatment-ranking model is fitted.
+
+DAC means **divide-and-combine over parameter coordinates**. All rows remain
+in every selected coordinate block. Blocks partition the columns without
+padding an uneven remainder; each contributes its own mean, covariance of the
+mean, and `df = n - 1`. Partitioning correlated coordinates does not make their
+p-values independent. Use a justified independent-block design or assess the
+consequences of dependence separately.
+
+## Empty sets and numerical limits
+
+A minimum above the cutoff is not alone enough to establish emptiness: a
+validated convex lower bound must also exceed the cutoff. Study removal is
+off by default. An explicit `empty_set_policy()` ranks individual p-values at
+the validated minimum, breaks ties by original input index, and removes the
+first eligible whole block. Multivariate deletion must preserve projection
+rank. Retained weights are renormalized and the cutoff is recomputed using the
+resolved calibration after each removal. Adaptive removal is sensitivity
+analysis; the original coverage statement does not automatically survive it.
+
+Finite-number laws retain characteristic-function inversion for upper-tail
+calibration and use a separate lower-tail representation. Requested quadrature
+tolerances are `rel.tol = 2e-11` and `abs.tol = 2e-13`, with at most 600
+subdivisions per integral. Integration status, estimated error, and probability
+range are checked. Error estimates stay on the unlogged scale, even when a log
+probability is requested; they are not rigorous total-error bounds.
+
+### Lower tails without subtractive cancellation
+
+For a reciprocal uniform score $Y=1/U$, shift to $Z=Y-1$ before inversion.
+Its Laplace transform for $\Re(s)>0$ is
+
+\[
+  L_{\mathrm{EH}}(s)=1-s e^s E_1(s)
+    =\int_0^\infty\frac{t e^{-t}}{s+t}\,dt.
+\]
+
+For a standard half-Cauchy score the transform is
+
+\[
+  L_{\mathrm{HC}}(s)=
+  \frac{e^{-is}E_1(-is)-e^{is}E_1(is)}{i\pi}.
+\]
+
+The native R complex E1 routine uses the principal-branch power series and a
+continued fraction, not a Python runtime or a numerical derivative.
+[DLMF power series](https://dlmf.nist.gov/6.6.E2),
+[DLMF continued fraction](https://dlmf.nist.gov/6.9.E1).
+For moderate reciprocal-transform arguments, the equivalent expression
+$L_{\mathrm{EH}}(s)=e^s E_2(s)$ is evaluated directly with the generalized
+exponential-integral fraction, avoiding cancellation even before the
+large-argument switch.
+[DLMF generalized exponential integral](https://dlmf.nist.gov/8.19.E1),
+[DLMF incomplete-gamma fraction](https://dlmf.nist.gov/8.9.E2).
+Large arguments use the transforms' inverse-power expansions directly,
+avoiding subtraction of nearly equal terms. The reciprocal expansion has 32
+terms with absolute truncation remainder bounded by $33!/|s|^{33}$ from
+$|s|=50$. The half-Cauchy expansion has 26 terms, with remainder bounded by
+$(2/\pi)52!/(|s|/\sqrt{2})^{53}$ from $|s|=60$. These bounds concern truncation,
+not accumulated floating arithmetic.
+
+For positive distance $z$ from support, select a positive saddle $a$ satisfying
+$\sum_j w_j[-L'(aw_j)/L(aw_j)]=z$. The R root search works in log coordinates.
+Writing $P(s)=\prod_j L(w_js)$, the density inversion is
+
+\[
+  f(z)=\frac{e^{az}P(a)}{\pi}\frac{a}{\sqrt m}
+  \int_0^\infty \Re\left\{
+    e^{i a z u/\sqrt m}\frac{P(a+i a u/\sqrt m)}{P(a)}
+  \right\}\,du.
+\]
+
+For the CDF, multiply the normalized integrand by
+$a/(a+i a u/\sqrt m)$ and divide the prefactor by $a$. External factors are
+combined in logarithms, and small CDFs are evaluated directly. The saddle
+changes the numerical contour, not the target distribution.
+
+Two-coordinate lower tails instead use a finite positive convolution. Larger
+systems with at least eight comparable weights first use phase-combined
+improper quadrature. Other systems, or rejected direct quadratures, use checked
+finite half-period integrals and convergence acceleration, with a 100-cycle
+limit. The estimated error includes accumulated quadrature error and stability
+of successive extrapolants. This R-specific implementation uses Wynn's epsilon
+recurrence; it is not identical to Python's Fourier quadrature backend.
+[DLMF convergence acceleration](https://dlmf.nist.gov/3.9).
+Unconverged cycles raise an error, rather than supplying an unchecked zero.
+
+Very close to support, positive-convolution simplex expansions have analytic
+remainder bounds. Elsewhere, simplex and tilted-density/Chernoff upper bounds
+can establish underflow. Such zero shortcuts retain at least the smallest
+positive floating-point number as an absolute error allowance. The old
+half-Cauchy `location - 2.5` zero shortcut is no longer used.
+
+Reciprocal count inputs denote exact support one. Explicit float vectors are
+not silently renormalized; their support is the exact real sum of the supplied
+binary entries. A compensated sum computes the support distance without first
+rounding that sum. This distinction also survives quantile inversion. In an
+extreme boundary calculation, three supplied binary approximations of `1/3`
+therefore need not have the same answer at one as count `3`.
+
+```{r repaired-lower-tails}
+phcmean(0.01, 10, diagnostics = TRUE)
+pehmean(2, 100, diagnostics = TRUE)
+stopifnot(phcmean(0.01, 10) > 0, dehmean(1e160, 1) > 0)
+```
+
+Numerical errors combine quadrature/extrapolation estimates and floating
+allowances; they do not promise arbitrary-tail uniform relative accuracy.
+Analytic support and infinite endpoints are handled separately. Very extreme
+weight scales, unrepresentable saddles, or slow oscillatory convergence can
+still produce an explicit error.
+
+The study-p-value floor is `1e-150`. Clipped-tail minima and convex domains
+that can reach this floor cannot authorize empty-set deletion. Near-empty,
+ill-conditioned, or unrepresentable inputs can fail explicitly. Refer to
+`vignette("troubleshooting", package = "heavilyright")` for error classes,
+trace retention, and a minimal reproducible report.

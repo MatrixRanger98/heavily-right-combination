@@ -1,0 +1,60 @@
+---
+title: "Getting started with heavilyright"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with heavilyright}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup}
+library(heavilyright)
+```
+
+## Combining p-values
+
+Finite-number and approximate calibration are named explicitly.
+
+```{r}
+finite_rule <- new_combination("hcauchy", m = 3, calibration = "finite")
+combine_p(c(0.01, 0.20, 0.40), finite_rule)
+finite_rule$calibration
+```
+
+## Calibrating sample means
+
+```{r}
+sample <- matrix(c(0.8, 1.0, 1.2, 0.9, 1.1, 0.9, 1.3, 1.0), ncol = 2)
+standard_error_of_mean(sample)
+covariance_of_mean(sample)
+```
+
+The covariance result is `W/[n(n-1)]` and belongs in `study(vcov = ...)`.
+
+## Scalar confidence intervals
+
+```{r}
+fit <- fit_meta_1d(
+  estimate = c(0.10, 0.14, 0.08),
+  se = c(0.04, 0.05, 0.03)
+)
+fit
+confint(fit)
+```
+
+## Multivariate regions
+
+```{r}
+region <- fit_meta_md(
+  list(study(
+    c(0.2, -0.1),
+    matrix(c(0.04, 0.01, 0.01, 0.09), 2),
+    df = 29
+  )),
+  parameter_dim = 2
+)
+interval <- support_interval(region, c(1, 0))
+interval
+interval$upper_diagnostics
+```
+

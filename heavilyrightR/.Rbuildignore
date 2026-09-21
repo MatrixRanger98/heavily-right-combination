@@ -1,0 +1,6 @@
+^\.Rproj\.user$
+^.*\.Rproj$
+^README\.Rmd$
+^cran-comments\.md$
+^NUMERICS\.md$
+^EMPTY_SETS\.md$

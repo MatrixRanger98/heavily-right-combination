@@ -1,0 +1,96 @@
+---
+title: "Network meta-analysis, coordinate blocks, and empty regions"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Network meta-analysis, coordinate blocks, and empty regions}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup}
+library(heavilyright)
+```
+
+## Treatment networks
+
+Positive contrasts mean the first treatment minus the second. Treatment names
+and the reference are user supplied. A two-treatment network is also supported.
+
+```{r}
+network <- network_studies(
+  c(0.2, 0.25, 0.1), c(0.2, 0.18, 0.22),
+  treat1 = c("B", "C", "C"), treat2 = c("A", "A", "B"), reference = "A"
+)
+fit <- fit_nma(network)
+coef(fit)
+contrasts <- nma_contrasts(fit)
+contrasts
+attr(contrasts, "intervals")[[1]]$upper_diagnostics$kkt_residual
+```
+
+For multi-arm trials, independent arm means induce correlated contrasts through
+their shared local baseline. Supply standard errors of the arm means.
+
+```{r}
+network <- network_arm_studies(
+  mean = c(1, 1.2, 0.8, 1, 1.15), se = rep(0.1, 5),
+  treatment = c("A", "B", "C", "A", "B"),
+  study_id = c("trial1", "trial1", "trial1", "trial2", "trial2"),
+  reference = "A"
+)
+network$studies[[1]]$vcov
+nma_contrasts(fit_nma(network))
+nma_wls(network)
+```
+
+Alternatively pass nonredundant trial contrasts and their joint covariance
+matrices to `network_studies()`. Repeated trial identifiers without covariance
+raise an error. The explicit `multiarm = "independent"` choice uses a
+comparison-level HCCT model; it does not correct within-trial
+dependence. These are common-effect regions; no heterogeneity model is fitted.
+
+## Divide-and-combine
+
+DAC divides the parameter coordinates while keeping every observation row.
+Unequal or named groups are allowed; the groups must partition all columns.
+
+```{r}
+set.seed(21)
+x <- matrix(rnorm(120), 30, 4, dimnames = list(NULL, letters[1:4]))
+blocks <- list(first = c("a", "c"), second = c("b", "d"))
+fit <- fit_dac(x, blocks = blocks)
+coef(fit)
+contains(fit, colMeans(x))
+support_interval(fit, c(1, 0, 0, 0))
+```
+
+Every block uses `cov(x)/n` and df `n-1`. These finite-sample calibrations do
+not make correlated coordinate blocks independent. The chosen finite-number
+combination law assumes independent block p-values; general dependence may
+change coverage. `study()` and `fit_meta_md()` provide the lower-level route
+for custom estimators, supplied covariance summaries, or overlapping projections.
+
+## Empty-set sensitivity analysis
+
+Adjustment is disabled by default. An opt-in policy removes whole input study
+blocks only after a convex lower bound proves emptiness and only if the
+remaining projections retain full parameter rank.
+
+```{r}
+studies <- list(
+  study(c(-4, 0), diag(2), label = "left"),
+  study(c(4, 0), diag(2), label = "right")
+)
+fit <- fit_meta_md(studies, empty_policy = empty_set_policy(warn = FALSE))
+fit$empty_set_diagnostics$final_original_indices
+fit$empty_set_diagnostics$trace[[1]]$feasible_set_score_lower_bound
+fit$empty_set_diagnostics$trace[[1]]$cutoff
+support_interval(fit, c(1, 0))
+```
+
+The audit retains every ranked candidate, rank check, removal, recalibration,
+and numerical failure. Save it with `write_empty_trace(record, new_path)`.
+Adaptive removal is a sensitivity procedure, not a post-selection coverage
+guarantee. Unrepresentable tails or failed numerical certificates never
+authorize deletion. Always check `support_interval(...)$success` before using
+the numerical bounds; `nma_contrasts()` raises if a contrast fails its checks.

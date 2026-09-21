@@ -1,0 +1,19 @@
+heavilyright is distributed under GPL version 3 or any later version.
+Maintainer: Tianle Liu <tylerliuthu@gmail.com>.
+
+R/landau.R contains adapted coefficient algorithms from CERN ROOT MathCore.
+Upstream attribution: Copyright (c) 2005, LCG ROOT MathLib Team.
+ROOT is licensed under LGPL version 2.1 or any later version; section 3
+permits distribution of an adapted work under GPL version 2 or a later version.
+The native R translation changes parameterization, vectorization and
+quantile inversion. The exact extraction commit is not recorded.
+
+Upstream density, CDF and quantile algorithms:
+https://root.cern.ch/doc/master/PdfFuncMathCore_8cxx_source.html
+https://root.cern.ch/doc/master/ProbFuncMathCore_8cxx_source.html
+https://root.cern.ch/doc/master/QuantFuncMathCore_8cxx_source.html
+License: https://root.cern.ch/about/license/
+
+The R source package includes COPYING and COPYING.LGPL-2.1. The repository's
+THIRD_PARTY.md additionally documents the Senn2013 data used by the separate
+reproduction project; no Senn2013 dataset is bundled inside this R package.

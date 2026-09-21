@@ -1,0 +1,14 @@
+include README.md USAGE.md THIRD_PARTY.md LICENSE pyproject.toml
+recursive-include licenses *
+recursive-include heavily_right *.py py.typed
+recursive-include reproduction *.py *.md *.csv
+recursive-include tests *.py *.json
+recursive-include docs *.md
+prune data
+prune fig
+prune tmp
+prune results
+prune legacy
+prune geogebra
+prune wolfram
+global-exclude __pycache__ *.py[cod] .DS_Store
