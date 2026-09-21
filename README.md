@@ -40,9 +40,7 @@ example("fit_nma", package = "heavilyright")
 | [heavilyrightR/](heavilyrightR/README.md) | Native R package, reference help, tests and vignettes |
 | [reproduction/](reproduction/README.md) | Python experiment configurations, simulation, summaries and plotting |
 | [results/](results/README.md) | Saved results and complete figure/table-to-code mapping |
-| [data/](data/README.md) | Fixed simulation reference arrays for independent comparisons |
 | [geogebra/](geogebra/README.md) | Eight illustration constructions and PDF-export instructions |
-| [wolfram/](wolfram/README.md) | Optional Wolfram connectivity-score implementation |
 
 The NMA input CSV and its provenance live in
 [reproduction/network_meta_analysis/data/](reproduction/network_meta_analysis/data/README.md).
